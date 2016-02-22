@@ -21,7 +21,7 @@ def oneDimResidency_df(radResPlt, FODataframe, movementFilter, visState, numBins
     areaNorm[1:] = areaNorm[1:]-areaNorm[:-1]
 
     # colormap for trials (visible object trials in colour, invisible object trials in grey shades)
-    numInvTrials = sum(['invisible' in visibilityState[trial] for trial in range(len(visState))])
+    numInvTrials = sum(['invisible' in visState[trial] for trial in range(len(visState))])
     numVisTrials = len(visState)-numInvTrials
 
     visTrialCMap = plt.cm.ScalarMappable(norm=colors.Normalize(vmin=-2, vmax=numVisTrials), cmap='Reds')
@@ -109,7 +109,7 @@ def getTurnStartHistCounts(rotMeasure, objDist, turnTH, turnTH_neg, turnTH_pos, 
     return nTL_apr, nTL_dep, nTR_apr, nTR_dep, nT_apr, nT_dep, nDt_apr, nDt_dep, edges
 
 
-def turnRatePerDistance(Fig, FOAllFlies_df, visState, movementfilt, useTurnIndex, useTurnStarts, ylimrange):
+def turnRatePerDistance(Fig, FOAllFlies_df,keylistLong, visState, movementfilt, useTurnIndex, useTurnStarts, ylimrange):
     keyind_xPos = keylistLong.index('xPosInMiniarena')
     keyind_yPos = keylistLong.index('yPosInMiniarena')
     keyind_vT = keylistLong.index('transVelo')
