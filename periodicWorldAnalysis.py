@@ -6,7 +6,7 @@ import numpy as np
 
 
 def collapseToMiniArena(xCoord, yCoord, arenaRad, objectCoords):
-    """ Collapse to 'mini-arena' while preserving the global heading """
+    """ Collapse to radial symmetric, circular 'mini-arena' while preserving the global heading """
 
     xCoordMA = np.copy(xCoord)
     yCoordMA = np.copy(yCoord)
@@ -29,3 +29,46 @@ def collapseToMiniArena(xCoord, yCoord, arenaRad, objectCoords):
     yCoordMA[distToCone > arenaRad] = np.nan
 
     return xCoordMA, yCoordMA
+
+def collapseTwoObjGrid(xFO, yFO, gridSize, gridRepeat):
+    """ Collapes square grid to one square tile, preserving global heading"""
+    nFrames = len(xFO)
+    xPosMA = np.copy(xFO)
+    yPosMA = np.copy(yFO)
+
+    for frame in range(nFrames):
+
+        # collapse in y
+        if yFO[frame] > gridRepeat[1]*gridSize:
+            yPosMA[frame] = np.NaN
+        elif yFO[frame] > (gridRepeat[1]-2)*gridSize:
+            yPosMA[frame] = yFO[frame] - 4*gridSize
+        elif yFO[frame] > (gridRepeat[1]-4)*gridSize:
+            yPosMA[frame] = yFO[frame] - 2*gridSize
+        elif yFO[frame] < -gridRepeat[1]*gridSize:
+            yPosMA[frame] = np.NaN
+        elif yFO[frame] < -(gridRepeat[1]-2)*gridSize:
+            yPosMA[frame] = yFO[frame] + 4*gridSize
+        elif yFO[frame] < -(gridRepeat[1]-4)*gridSize:
+            yPosMA[frame] = yFO[frame] + 2*gridSize
+
+        # collapse in x
+        if xFO[frame] > gridRepeat[0]*gridSize:
+            xPosMA[frame] = np.NaN
+        elif xFO[frame] > (gridRepeat[0]-2)*gridSize:
+            xPosMA[frame] = xFO[frame] - 4*gridSize
+        elif xFO[frame] > (gridRepeat[0]-4)*gridSize:
+            xPosMA[frame] = xFO[frame] - 2*gridSize
+        elif xFO[frame] < -gridRepeat[0]*gridSize:
+            xPosMA[frame] = np.NaN
+        elif xFO[frame] < -(gridRepeat[0]-2)*gridSize:
+            xPosMA[frame] = xFO[frame] + 4*gridSize
+        elif xFO[frame] < -(gridRepeat[0]-4)*gridSize:
+            xPosMA[frame] = xFO[frame] + 2*gridSize
+        elif xFO[frame] < 0:
+            xPosMA[frame] = xFO[frame] + 2*gridSize
+
+        if xPosMA[frame] < 0:
+            xPosMA[frame] = xPosMA[frame] + 2*gridSize
+
+    return xPosMA, yPosMA
