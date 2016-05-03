@@ -8,17 +8,27 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib import gridspec
-import seaborn as sns
+import seaborn as snss
 import matplotlib.colors as colors
+
+import seaborn as sns
+
+
+def myAxisTheme(myax):
+    myax.get_xaxis().tick_bottom()
+    myax.get_yaxis().tick_left()
+    myax.spines['top'].set_visible(False)
+    myax.spines['right'].set_visible(False)
 
 
 # 1D (polar) residency .................................................................................................
 
-def oneDimResidency_df(radResPlt, FODataframe, movementFilter, visState, numBins, histRange):
+def oneDimResidency_df(radResPlt, FODataframe, keyind_xPos, keyind_yPos, movementFilter, visState, numBins, histRange,
+                       lineAlpha, plotLog):
 
     # normalisation factor for cirle area rings
-    areaNorm = np.square(np.linspace(histRange[0], histRange[1], numBins))*np.pi
-    areaNorm[1:] = areaNorm[1:]-areaNorm[:-1]
+    areaNormA = np.square(np.linspace(histRange[0], histRange[1], numBins+1))*np.pi
+    areaNorm = areaNormA[1:]-areaNormA[:-1]
 
     # colormap for trials (visible object trials in colour, invisible object trials in grey shades)
     numInvTrials = sum(['invisible' in visState[trial] for trial in range(len(visState))])
@@ -41,14 +51,21 @@ def oneDimResidency_df(radResPlt, FODataframe, movementFilter, visState, numBins
         objDist, theta = cartesian2polar(xPosMA, yPosMA)
 
         [radresidency, edges] = np.histogram(objDist, bins=numBins, range=histRange)
-        radResPlt.plot(edges[:-1]+np.diff(edges)/2.0, np.log(radresidency/areaNorm), color=trialCMap[trial])
+        if plotLog:
+            radResPlt.plot(edges[:-1]+np.diff(edges)/2.0, np.log(radresidency/areaNorm),
+                           color=trialCMap[trial], alpha=lineAlpha)
+        else:
+            radResPlt.plot(edges[:-1]+np.diff(edges)/2.0, radresidency/areaNorm,
+                           color=trialCMap[trial], alpha=lineAlpha)
 
         legendtext.append(cond + ' t' + str(trial+1))
 
     plt.legend(legendtext, loc='best', fontsize=12)
     radResPlt.set_xlabel('object distance [mm]', fontsize=12)
-    radResPlt.set_ylabel('log(area corrected residency)', fontsize=12)
-    radResFig.tight_layout()
+    if plotLog:
+        radResPlt.set_ylabel('log(area corrected residency)', fontsize=12)
+    else:
+        radResPlt.set_ylabel('area corrected residency', fontsize=12)
 
     return radResPlt
 
@@ -56,9 +73,9 @@ def oneDimResidency_df(radResPlt, FODataframe, movementFilter, visState, numBins
 # Turn count vs. radial distance (from object / arena center) ..........................................................
 
 def getTurnCounts(selectpts, allturns, leftturns, rightturns, objDist, nBins, histDRange):
-    pts_turn = np.logical_and(selectPts, allturns)
-    pts_turnR = np.logical_and(selectPts, rightturns)
-    pts_turnL = np.logical_and(selectPts, leftturns)
+    pts_turn = np.logical_and(selectpts, allturns)
+    pts_turnR = np.logical_and(selectpts, rightturns)
+    pts_turnL = np.logical_and(selectpts, leftturns)
 
     nTL, _ = np.histogram(objDist[pts_turnL], bins=nBins, range=histDRange)
     nTR, _ = np.histogram(objDist[pts_turnR], bins=nBins, range=histDRange)
@@ -83,7 +100,7 @@ def getTurnHistCounts(rotMeas, objDist, tTH, tTH_neg, tTH_pos, nBins, histDRange
     return nTL_apr, nTL_dep, nTR_apr, nTR_dep, nT_apr, nT_dep, nDt_apr, nDt_dep, edges
 
 
-def getTurnStartHistCounts(rotMeasure, objDist, turnTH, turnTH_neg, turnTH_pos, numBins, histDRange):
+def getTurnChangeHistCounts(rotMeasure, objDist, turnTH, turnTH_neg, turnTH_pos, numBins, histDRange, change):
 
     d_objDist = np.hstack((0, np.diff(objDist)))
     pts_apr = d_objDist < 0
@@ -91,15 +108,15 @@ def getTurnStartHistCounts(rotMeasure, objDist, turnTH, turnTH_neg, turnTH_pos, 
 
     turns = (abs(rotMeasure) > turnTH).astype('int')
     tst = np.zeros(len(turns))
-    tst[1:] = np.diff(turns) == 1
+    tst[1:] = np.diff(turns) == change
 
     turnsL = (rotMeasure > turnTH_pos).astype('int')
     tstL = np.zeros(len(turnsL))
-    tstL[1:] = np.diff(turnsL) == 1
+    tstL[1:] = np.diff(turnsL) == change
 
     turnsR = (rotMeasure < turnTH_neg).astype('int')
     tstR = np.zeros(len(turnsR))
-    tstR[1:] = np.diff(turnsR) == 1
+    tstR[1:] = np.diff(turnsR) == change
 
     # approach
     nTL_apr, nTR_apr, nT_apr, nDt_apr, edges = getTurnCounts(pts_apr, tst, tstL, tstR, objDist, numBins, histDRange)
@@ -109,7 +126,8 @@ def getTurnStartHistCounts(rotMeasure, objDist, turnTH, turnTH_neg, turnTH_pos, 
     return nTL_apr, nTL_dep, nTR_apr, nTR_dep, nT_apr, nT_dep, nDt_apr, nDt_dep, edges
 
 
-def turnRatePerDistance(Fig, FOAllFlies_df,keylistLong, visState, movementfilt, useTurnIndex, useTurnStarts, ylimrange):
+def turnRatePerDistance(Fig, FOAllFlies_df,keylistLong, visState, movementfilt, useTurnIndex, useTurnChange,
+                        trialName, ylimrange, numBins, arenaRad):
     keyind_xPos = keylistLong.index('xPosInMiniarena')
     keyind_yPos = keylistLong.index('yPosInMiniarena')
     keyind_vT = keylistLong.index('transVelo')
@@ -145,7 +163,7 @@ def turnRatePerDistance(Fig, FOAllFlies_df,keylistLong, visState, movementfilt, 
 
     legendtext = []
 
-    for trial, objecttype in enumerate(visibilityState):
+    for trial, objecttype in enumerate(visState):
         querystring = '(trialtype=="' + objecttype + '") & (trial==' + str(trial+1) + ') & ('\
                       + movementfilt + ') & (objectDistance>6)'
         xPosFly = np.asarray(FOAllFlies_df.query(querystring).iloc[:, keyind_xPos:keyind_xPos+1]).squeeze()
@@ -161,12 +179,14 @@ def turnRatePerDistance(Fig, FOAllFlies_df,keylistLong, visState, movementfilt, 
             vRotFly_filt = np.convolve(vRotFly, np.ones((5,))/5, mode='same')
 
         # Get counts
-        if useTurnStarts:
+        if useTurnChange:
             nTL_apr, nTL_dep, nTR_apr, nTR_dep, nT_apr, nT_dep, nDt_apr, nDt_dep, edges\
-                = getTurnStartHistCounts(vRotFly_filt, objDist, turnTH, turnTH_neg, turnTH_pos, numBins, (6, 56))
+                = getTurnChangeHistCounts(vRotFly_filt, objDist, turnTH, turnTH_neg, turnTH_pos,
+                                          numBins, (6, 56), useTurnChange)
         else:
             nTL_apr, nTL_dep, nTR_apr, nTR_dep, nT_apr, nT_dep, nDt_apr, nDt_dep, edges\
-                = getTurnHistCounts(vRotFly_filt, objDist, turnTH, turnTH_neg, turnTH_pos, numBins, (6, 56))
+                = getTurnHistCounts(vRotFly_filt, objDist, turnTH, turnTH_neg, turnTH_pos,
+                                    numBins, (6, 56))
 
         binctrs = edges[:-1]+np.mean(np.diff(edges))/2.0
 
@@ -177,7 +197,7 @@ def turnRatePerDistance(Fig, FOAllFlies_df,keylistLong, visState, movementfilt, 
             axApr.plot(binctrs, 1.0*nT_apr/nDt_apr, color=invAprCMap.to_rgba(0.5+trial % n_vist))
             axDep.plot(binctrs, 1.0*nT_dep/nDt_dep, color=invDepCMap.to_rgba(0.5+trial % n_vist))
 
-        legendtext.append(objecttype + ', t'+str(trial+1))
+        legendtext.append(trialName[trial])
 
     axApr.set_ylabel('normalised turn count')
 
@@ -185,7 +205,7 @@ def turnRatePerDistance(Fig, FOAllFlies_df,keylistLong, visState, movementfilt, 
         ax.set_xlabel('object distance [mm]')
         ax.set_ylim(ylimrange)
         ax.set_xlim(0, arenaRad)
-        ax.legend(legendtext)
+        ax.legend(legendtext, fontsize=11)
         myAxisTheme(ax)
 
     Fig.tight_layout()
@@ -195,7 +215,7 @@ def turnRatePerDistance(Fig, FOAllFlies_df,keylistLong, visState, movementfilt, 
 
 # Combined plots of velocity distributions + relative heading (sorted by mean walking speed) of multiple flies .........
 
-def plotVeloHeadingDistribution_flyVR_df(mydataframe, trialtype, trial, flyIDs, keylist, vTransTH):
+def plotVeloHeadingDistribution_flyVR_df(mydataframe, trialtype, trial, flyIDs, keylist, vTransTH, minDist, maxDist):
     """ Plot velocity and relative heading distributions (non-normalised) for a set of flies """
 
     numFlies = len(flyIDs)
@@ -227,11 +247,15 @@ def plotVeloHeadingDistribution_flyVR_df(mydataframe, trialtype, trial, flyIDs, 
     keyind_h = keylist.index('gamma')
     keyind_vR = keylist.index('rotVelo')
 
-    nhAll = np.zeros((18,numFlies))
+    nhAll = np.zeros((18, numFlies))
     meanSpeeds = np.zeros(numFlies)
 
+    flyIDsShort = []
+    [flyIDsShort.append(flyIDs[fly][-3:]) for fly in range(numFlies)]
+
     for flyInd, flyID in enumerate(flyIDs):
-        querystring = '(moving>0) & (trialtype == "'+trialtype+'") & (trial=='+trial+') & (flyID == "'+flyID+'")'
+        querystring = '(moving>0) & (trialtype == "'+trialtype+'") & (trial=='+trial+') & (flyID == "'+flyID+'")' +\
+                      '& (objectDistance>' + str(minDist) + ') & (objectDistance<' + str(maxDist) + ')'
         tV = mydataframe.query(querystring).iloc[:, keyind_vT:keyind_vT+1].squeeze()
         rV = mydataframe.query(querystring).iloc[:, keyind_vR:keyind_vR+1].squeeze()
 
@@ -246,13 +270,96 @@ def plotVeloHeadingDistribution_flyVR_df(mydataframe, trialtype, trial, flyIDs, 
         vRsubplt.plot(bincenters, nrV, alpha=0.7, color=flyCMap.to_rgba(flyInd))
 
         # heading
-        querystring = '(moving>0)  & (objectDistance>6) & (objectDistance<51) & (trialtype == "' + trialtype \
-                      + '") & (trial==' + trial + ') & (flyID == "' + flyID + '")'
         h = mydataframe.query(querystring).iloc[:, keyind_h:keyind_h+1].squeeze()
-        tV = mydataframe.query(querystring).iloc[:, keyind_vT:keyind_vT+1].squeeze()
         nh, binEdges = np.histogram(h, bins=18, range=(0, np.pi))
+        if np.nansum(ntV) > 10*60*20*0.05:
+            # np.nanmedian(tV) > 2.0:
+            nhAll[:, flyInd] = nh
+            meanSpeeds[flyInd] = np.nanmedian(tV)
+
+    X, Y = np.meshgrid(range(0, numFlies+1), binEdges)
+    sortedSpeeds = sorted(range(len(meanSpeeds)), key=lambda k: meanSpeeds[k])
+    nhAll_sorted = np.zeros((len(nh), numFlies))
+    for flyInd in range(len(sortedSpeeds)):
+        nhAll_sorted[:, flyInd] = nhAll[:, sortedSpeeds[flyInd]]
+    toPlot = nhAll_sorted/(np.tile(np.sum(nhAll_sorted, 0), (len(nh), 1)))
+    toPlot[np.isnan(toPlot)] = 0
+    hsubplt.pcolormesh(Y, X, toPlot, cmap='Greys')
+    hsubplt.set_title(str(minDist) + 'mm < objectDistance < ' + str(maxDist) + ' mm ')
+    hsubplt.yaxis.set_visible(False)
+    for fly in range(numFlies):
+        hsubplt.text(np.pi+0.1, sortedSpeeds[fly]+.5, flyIDsShort[fly], fontsize=12)
+
+    vTsubplt.set_xlim((vTransTH, 30))
+    vRsubplt.set_xlim(vRotRange)
+    hsubplt.set_xlim((0, np.pi))
+
+    veloDistFig.suptitle(trialtype+' object, trial '+trial+' (moving > '+str(vTransTH)+' mm/s)', fontsize=12)
+    vTsubplt.legend(flyIDsShort, ncol=2, loc=1, fontsize=8)
+
+    return veloDistFig
+
+
+def plotVeloHeadingDistribution_freeWalk(flyIDs, vTransTH, vTransAll, vRotAll, objDistAll, gammaFullAll, flyIDAll,\
+                                         minDist, maxDist):
+    """ Plot velocity and relative heading distributions (non-normalised) for a set of flies """
+
+    numFlies = len(flyIDs)
+    flyCMap = plt.cm.ScalarMappable(norm=colors.Normalize(vmin=0, vmax=numFlies), cmap='Accent')
+
+    vRotRange = (-10, 10)
+    angleRange = (-np.pi, np.pi)
+
+    veloDistFig = plt.figure(figsize=(15, 4))
+
+    gs = gridspec.GridSpec(1, 4, width_ratios=(4, 4, 4, 1.25))
+
+    vTsubplt = veloDistFig.add_subplot(gs[0])
+    vTsubplt.set_xlabel('translational velocity [mm/s]')
+    vTsubplt.set_ylabel('count')
+    sns.despine(right=True, offset=5, trim=False)
+    sns.axes_style({'axes.linewidth': 1, 'axes.edgecolor': '.8'})
+
+    vRsubplt = veloDistFig.add_subplot(gs[1])
+    vRsubplt.set_xlabel('rotational velocity [rad/s]')
+    sns.despine(right=True, offset=5, trim=False)
+    sns.axes_style({'axes.linewidth': 1, 'axes.edgecolor': '.8'})
+
+    hsubplt = veloDistFig.add_subplot(gs[2])
+    hsubplt.set_xlabel('heading [rad]')
+    sns.despine(right=True, offset=5, trim=False)
+    sns.axes_style({'axes.linewidth': 1, 'axes.edgecolor': '.8'})
+
+    nhAll = np.zeros((18, numFlies))
+    meanSpeeds = np.zeros(numFlies)
+
+    flyIDsShort = []
+    [flyIDsShort.append(flyIDs[fly][-3:]) for fly in range(numFlies)]
+
+    selectMove = vTransAll > vTransTH
+    selectDist = np.logical_and(objDistAll>minDist,objDistAll<maxDist)
+    select = np.logical_and(selectMove,selectDist)
+
+    for flyInd, flyID in enumerate(flyIDs):
+        selectFly = np.logical_and(select,flyIDAll == flyIDs[flyInd])
+        tV = vTransAll[selectFly]
+        rV = vRotAll[selectFly]
+        # v trans
+        ntV, binEdges=np.histogram(tV, bins=50, range=(vTransTH, 60))
         bincenters = 0.5*(binEdges[1:]+binEdges[:-1])
-        if np.mean(tV) > 2.0: # sum(nh)/(20*6) > 10:
+        vTsubplt.plot(bincenters, ntV, alpha=0.7, color=flyCMap.to_rgba(flyInd))
+
+        # v rot
+        nrV, binEdges = np.histogram(rV, bins=50, range=vRotRange)
+        bincenters = 0.5*(binEdges[1:]+binEdges[:-1])
+        vRsubplt.plot(bincenters, nrV, alpha=0.7, color=flyCMap.to_rgba(flyInd))
+
+        # heading
+        h = gammaFullAll[selectFly]
+        nh, binEdges = np.histogram(h, bins=18, range=angleRange)
+        bincenters = 0.5*(binEdges[1:]+binEdges[:-1])
+        nh, binEdges = np.histogram(h, bins=18, range=(0, np.pi))
+        if np.nanmean(tV) > 2.0:
             nhAll[:, flyInd] = nh
             meanSpeeds[flyInd] = np.mean(tV)
 
@@ -262,20 +369,177 @@ def plotVeloHeadingDistribution_flyVR_df(mydataframe, trialtype, trial, flyIDs, 
     toPlot = nhAll_sorted/sum(nhAll_sorted)
     toPlot[np.isnan(toPlot)] = 0
     hsubplt.pcolormesh(Y, X, toPlot, cmap='Greys')
-    hsubplt.set_title(' 6mm < objectDistance < 51 mm ')
+    hsubplt.set_title(str(minDist) + 'mm < objectDistance < ' + str(maxDist) + ' mm ')
     hsubplt.yaxis.set_visible(False)
     for fly in range(numFlies):
-        hsubplt.text(np.pi+0.1, sortedSpeeds[fly]+.5, flyIDs[fly], fontsize=12)
+        hsubplt.text(np.pi+0.1, sortedSpeeds[fly]+.5, flyIDsShort[fly], fontsize=12)
 
-    vTsubplt.set_xlim((vTransTH, 30))
+    vTsubplt.set_xlim((vTransTH, 60))
     vRsubplt.set_xlim(vRotRange)
     hsubplt.set_xlim((0, np.pi))
 
-    veloDistFig.suptitle(trialtype+' object, trial '+trial+' (moving > '+str(vTransTH)+' mm/s)', fontsize=12)
+    veloDistFig.suptitle('single object in blue light, (moving > '+str(vTransTH)+' mm/s)'+
+                         str(minDist) + 'mm < objectDistance < '+str(maxDist)+' mm', fontsize=12)
     vTsubplt.legend(flyIDs, ncol=2, loc=1, fontsize=8)
 
     return veloDistFig
 
+
+def plotVeloHeadingDistribution2_flyVR_df(mydataframe, traceframgent, trialtype, trial, flyIDs, keylist, vTransTH,
+                                          minDist, maxDist):
+    """ Plot velocity and relative heading distributions (non-normalised) for a set of flies """
+    # traceframgent can be 'all', 'approach', 'departure'
+
+    numFlies = len(flyIDs)
+    flyCMap = plt.cm.ScalarMappable(norm=colors.Normalize(vmin=0, vmax=numFlies), cmap='Accent')
+
+    vRotRange = (-10, 10)
+    angleRange = (-np.pi, np.pi)
+
+    veloDistFig = plt.figure(figsize=(15, 4))
+
+    gs = gridspec.GridSpec(1, 4, width_ratios=(4, 4, 4, 1.25))
+
+    vTsubplt = veloDistFig.add_subplot(gs[0])
+    vTsubplt.set_xlabel('translational velocity [mm/s]')
+    vTsubplt.set_ylabel('count')
+    sns.despine(right=True, offset=5, trim=False)
+    sns.axes_style({'axes.linewidth': 1, 'axes.edgecolor': '.8'})
+
+    vRsubplt = veloDistFig.add_subplot(gs[1])
+    vRsubplt.set_xlabel('rotational velocity [rad/s]')
+    sns.despine(right=True, offset=5, trim=False)
+    sns.axes_style({'axes.linewidth': 1, 'axes.edgecolor': '.8'})
+
+    hsubplt = veloDistFig.add_subplot(gs[2])
+    hsubplt.set_xlabel('heading [rad]')
+    sns.despine(right=True, offset=5, trim=False)
+    sns.axes_style({'axes.linewidth': 1, 'axes.edgecolor': '.8'})
+
+    keyind_vT = keylist.index('transVelo')
+    keyind_h = keylist.index('gammaFull')
+    keyind_vR = keylist.index('rotVelo')
+
+    keyind_oD = keylist.index('objectDistance')
+
+    flyIDsShort = []
+    [flyIDsShort.append(flyIDs[fly][-3:]) for fly in range(numFlies)]
+
+    for flyInd, flyID in enumerate(flyIDs):
+        querystring = '(moving>0) & (trialtype == "'+trialtype+'") & (trial=='+trial+') & (flyID == "'+flyID+'")' + \
+                      '& (objectDistance>' + str(minDist) + ') & (objectDistance<' + str(maxDist) + ')'
+        tV = mydataframe.query(querystring).iloc[:, keyind_vT:keyind_vT+1].squeeze()
+        rV = mydataframe.query(querystring).iloc[:, keyind_vR:keyind_vR+1].squeeze()
+        oD = mydataframe.query(querystring).iloc[:, keyind_oD:keyind_oD+1].squeeze()
+        oD_d = np.hstack((0, np.diff(oD)))
+
+        if len(tV) == 0:
+            continue
+
+        if traceframgent == 'all':
+            selecttrace = np.ones(len(oD_d), dtype=bool)
+        elif traceframgent == 'approach':
+            selecttrace = oD_d < 0
+        else:
+            selecttrace = oD_d >= 0
+
+        # v trans
+        ntV, binEdges=np.histogram(tV[selecttrace], bins=50, range=(vTransTH, 30))
+        bincenters = 0.5*(binEdges[1:]+binEdges[:-1])
+        vTsubplt.plot(bincenters, ntV, alpha=0.7, color=flyCMap.to_rgba(flyInd))
+
+        # v rot
+        nrV, binEdges = np.histogram(rV[selecttrace], bins=50, range=vRotRange)
+        bincenters = 0.5*(binEdges[1:]+binEdges[:-1])
+        vRsubplt.plot(bincenters, nrV, alpha=0.7, color=flyCMap.to_rgba(flyInd))
+
+        # heading
+        querystring = '(moving>0)  & (objectDistance>' + str(minDist) + ') & (objectDistance<' + str(maxDist) + \
+                      ') & (trialtype == "' + trialtype + '") & (trial==' + trial + \
+                      ') & (flyID == "' + flyID + '")'
+        h = mydataframe.query(querystring).iloc[:, keyind_h:keyind_h+1].squeeze()
+        nh, binEdges = np.histogram(h[selecttrace], bins=18, range=angleRange)
+        bincenters = 0.5*(binEdges[1:]+binEdges[:-1])
+        if np.nansum(ntV) > 10*60*20*0.05:
+            # np.nanmean(tV[selecttrace]) > 2.0:
+            hsubplt.plot(bincenters, nh, alpha=0.7, color=flyCMap.to_rgba(flyInd))
+
+    hsubplt.set_title(str(minDist) + 'mm < objectDistance < ' + str(maxDist) + ' mm ')
+
+    vTsubplt.set_xlim((vTransTH, 30))
+    vRsubplt.set_xlim(vRotRange)
+    hsubplt.set_xlim(angleRange)
+
+    veloDistFig.suptitle(trialtype+' object, trial '+trial+' (moving > '+str(vTransTH)+' mm/s)', fontsize=12)
+    vTsubplt.legend(flyIDsShort, ncol=2, loc=1, fontsize=8)
+
+    return veloDistFig
+
+
+def plotVeloHeadingDistribution2_freeWalk(flyIDs, vTransTH, vTransAll, vRotAll, objDistAll, gammaFullAll, flyIDAll,\
+                                         minDist, maxDist):
+    """ Plot velocity and relative heading distributions (non-normalised) for a set of flies """
+
+    numFlies = len(flyIDs)
+    flyCMap = plt.cm.ScalarMappable(norm=colors.Normalize(vmin=0, vmax=numFlies), cmap='Accent')
+
+    vRotRange = (-10, 10)
+    angleRange = (-np.pi, np.pi)
+
+    veloDistFig = plt.figure(figsize=(15, 4))
+
+    gs = gridspec.GridSpec(1, 4, width_ratios=(4, 4, 4, 1.25))
+
+    vTsubplt = veloDistFig.add_subplot(gs[0])
+    vTsubplt.set_xlabel('translational velocity [mm/s]')
+    vTsubplt.set_ylabel('count')
+    sns.despine(right=True, offset=5, trim=False)
+    sns.axes_style({'axes.linewidth': 1, 'axes.edgecolor': '.8'})
+
+    vRsubplt = veloDistFig.add_subplot(gs[1])
+    vRsubplt.set_xlabel('rotational velocity [rad/s]')
+    sns.despine(right=True, offset=5, trim=False)
+    sns.axes_style({'axes.linewidth': 1, 'axes.edgecolor': '.8'})
+
+    hsubplt = veloDistFig.add_subplot(gs[2])
+    hsubplt.set_xlabel('heading [rad]')
+    sns.despine(right=True, offset=5, trim=False)
+    sns.axes_style({'axes.linewidth': 1, 'axes.edgecolor': '.8'})
+
+    selectMove = vTransAll > vTransTH
+    selectDist = np.logical_and(objDistAll>minDist,objDistAll<maxDist)
+    select = np.logical_and(selectMove,selectDist)
+
+    for flyInd, flyID in enumerate(flyIDs):
+        selectFly = np.logical_and(select,flyIDAll == flyIDs[flyInd])
+        tV = vTransAll[selectFly]
+        rV = vRotAll[selectFly]
+        # v trans
+        ntV, binEdges=np.histogram(tV, bins=50, range=(vTransTH, 60))
+        bincenters = 0.5*(binEdges[1:]+binEdges[:-1])
+        vTsubplt.plot(bincenters, ntV, alpha=0.7, color=flyCMap.to_rgba(flyInd))
+
+        # v rot
+        nrV, binEdges = np.histogram(rV, bins=50, range=vRotRange)
+        bincenters = 0.5*(binEdges[1:]+binEdges[:-1])
+        vRsubplt.plot(bincenters, nrV, alpha=0.7, color=flyCMap.to_rgba(flyInd))
+
+        # heading
+        h = gammaFullAll[selectFly]
+        nh, binEdges = np.histogram(h, bins=18, range=angleRange)
+        bincenters = 0.5*(binEdges[1:]+binEdges[:-1])
+        if np.mean(tV) > 2.0:
+            hsubplt.plot(bincenters, nh, alpha=0.7, color=flyCMap.to_rgba(flyInd))
+
+    vTsubplt.set_xlim((vTransTH, 60))
+    vRsubplt.set_xlim(vRotRange)
+    hsubplt.set_xlim(angleRange)
+
+    veloDistFig.suptitle('single object in blue light, (moving > '+str(vTransTH)+' mm/s)'+
+                         str(minDist) + 'mm < objectDistance < '+str(maxDist)+' mm', fontsize=12)
+    vTsubplt.legend(flyIDs, ncol=2, loc=1, fontsize=8)
+
+    return veloDistFig
 
 # Utilitiy funtions  ...................................................................................................
 
