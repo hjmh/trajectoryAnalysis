@@ -70,6 +70,97 @@ def oneDimResidency_df(radResPlt, FODataframe, keyind_xPos, keyind_yPos, movemen
     return radResPlt
 
 
+def oneDimResidencyWithVar_df(radResPlt, FODataframe, flyIDs, keyind_xPos, keyind_yPos, movementFilter, visState,
+                              numBins, histRange, lineAlpha, plotLog, varstyle, fill, condLegend):
+
+    # normalisation factor for cirle area rings
+    areaNormA = np.square(np.linspace(histRange[0], histRange[1], numBins))*np.pi
+    areaNorm = areaNormA[1:]-areaNormA[:-1]
+
+    # colormap for trials (visible object trials in colour, invisible object trials in grey shades)
+    numInvTrials = sum(['invisible' in visState[trial] for trial in range(len(visState))])
+    numVisTrials = len(visState)-numInvTrials
+
+    visTrialCMap = plt.cm.ScalarMappable(norm=colors.Normalize(vmin=-2, vmax=numVisTrials), cmap='Reds')
+    invTrialCMap = plt.cm.ScalarMappable(norm=colors.Normalize(vmin=-2, vmax=numInvTrials), cmap='Greys')
+    trialCMap = [visTrialCMap.to_rgba(visTrial) for visTrial in range(numVisTrials)]
+    [trialCMap.append(invTrialCMap.to_rgba(invTrial)) for invTrial in range(numInvTrials)]
+
+    numFlies = len(flyIDs)
+
+    legendhand = []
+
+    for trial, cond in enumerate(visState):
+        trialRadRes = np.zeros((numFlies, numBins-1))
+        for fly in range(numFlies):
+            querystring = '(trialtype=="'+cond+'")&(trial=='+str(trial+1)+')&('+movementFilter\
+                            +')&(flyID=="'+flyIDs[fly]+'")'
+
+            xPosMA = np.asarray(FODataframe.query(querystring).iloc[:, keyind_xPos:keyind_xPos+1]).squeeze()
+            yPosMA = np.asarray(FODataframe.query(querystring).iloc[:, keyind_yPos:keyind_yPos+1]).squeeze()
+
+            # transform trajectory to polar coordinates
+            objDist, theta = cartesian2polar(xPosMA, yPosMA)
+
+            radresidency, edges = np.histogram(objDist, bins=np.linspace(histRange[0], histRange[1], numBins))
+            trialRadRes[fly, :] = radresidency/areaNorm
+
+            jitterRange = 0.2*np.diff(histRange)/numBins
+
+            if varstyle == 'dotplot':
+                if plotLog:
+                    toplot = np.log(radresidency/areaNorm)
+                else:
+                    toplot = radresidency/areaNorm
+
+                radResPlt.plot(edges[:-1]+np.diff(edges)/2.0+np.random.uniform(-jitterRange,jitterRange), toplot,
+                               color=trialCMap[trial], linestyle='none', marker='.', alpha=0.5)
+
+        if plotLog:
+            if varstyle == 'std':
+                toplot = np.log(np.nanmean(trialRadRes,0))
+                var1 = np.log(np.nanmean(trialRadRes,0) + np.nanstd(trialRadRes,0))
+                var2 = np.log(np.nanmean(trialRadRes,0) - np.nanstd(trialRadRes,0))
+            elif varstyle == 'iqr':
+                toplot = np.log(np.nanmedian(trialRadRes,0))
+                [var1, var2] = np.log(np.nanpercentile(trialRadRes,[25,75],axis=0))
+            else:
+                toplot = np.log(np.nanmean(trialRadRes,0))
+
+        else:
+            if varstyle == 'std':
+                toplot = np.nanmean(trialRadRes,0)
+                var1 = toplot + np.nanstd(trialRadRes,0)
+                var2 = toplot - np.nanstd(trialRadRes,0)
+            elif varstyle == 'iqr':
+                toplot = np.nanmedian(trialRadRes,0)
+                [var1, var2] = np.nanpercentile(trialRadRes,[25,75],axis=0)
+            else:
+                toplot = np.nanmean(trialRadRes,0)
+
+        if varstyle != 'dotplot':
+            lhand, = radResPlt.plot(edges[:-1]+np.diff(edges)/2.0, toplot, color=trialCMap[trial],
+                                    alpha=lineAlpha,linewidth=3)
+            radResPlt.plot(edges[:-1]+np.diff(edges)/2.0, var1,color=trialCMap[trial], alpha=lineAlpha,linewidth=1)
+            radResPlt.plot(edges[:-1]+np.diff(edges)/2.0, var2,color=trialCMap[trial], alpha=lineAlpha,linewidth=1)
+            if fill:
+                #radResPlt.fill_between(edges[:-1]+np.diff(edges)/2.0, np.maximum(var1,-6), np.maximum(var2,-6), color=trialCMap[trial], alpha=0.2)
+                radResPlt.fill_between(edges[:-1]+np.diff(edges)/2.0, var1, var2, color=trialCMap[trial], alpha=0.2)
+        else:
+            lhand, = radResPlt.plot(edges[:-1]+np.diff(edges)/2.0, toplot, color=trialCMap[trial], alpha=lineAlpha,linewidth=3)
+
+        legendhand.append(lhand)
+
+    plt.legend(legendhand, condLegend, loc='best', fontsize=12)
+    radResPlt.set_xlabel('object distance [mm]', fontsize=12)
+    if plotLog:
+        radResPlt.set_ylabel('log(area corrected residency)', fontsize=12)
+    else:
+        radResPlt.set_ylabel('area corrected residency', fontsize=12)
+
+    return radResPlt
+
+
 # Turn count vs. radial distance (from object / arena center) ..........................................................
 
 def getTurnCounts(selectpts, allturns, leftturns, rightturns, objDist, nBins, histDRange):
@@ -144,9 +235,9 @@ def turnRatePerDistance(Fig, FOAllFlies_df,keylistLong, visState, movementfilt, 
     else:
         vRot_filt = np.convolve(vRot, np.ones((5,))/5, mode='same')
 
-    turnTH_pos = 2*np.nanstd(vRot_filt[vRot_filt >= 0])
-    turnTH_neg = -2*np.nanstd(vRot_filt[vRot_filt <= 0])
-    turnTH = 2*np.nanstd(abs(vRot_filt))
+    turnTH_pos = 3*np.nanstd(vRot_filt[vRot_filt >= 0])
+    turnTH_neg = -3*np.nanstd(vRot_filt[vRot_filt <= 0])
+    turnTH = 3*np.nanstd(abs(vRot_filt))
 
     axApr = Fig.add_subplot(121)
     axApr.set_title('Approaches', fontsize=12)
@@ -300,7 +391,7 @@ def plotVeloHeadingDistribution_flyVR_df(mydataframe, trialtype, trial, flyIDs, 
     return veloDistFig
 
 
-def plotVeloHeadingDistribution_freeWalk(flyIDs, vTransTH, vTransAll, vRotAll, objDistAll, gammaFullAll, flyIDAll,\
+def plotVeloHeadingDistribution_freeWalk(flyIDs, vTransTH, vTransAll, vRotAll, objDistAll, gammaFullAll, flyIDAll,
                                          minDist, maxDist):
     """ Plot velocity and relative heading distributions (non-normalised) for a set of flies """
 
@@ -337,11 +428,11 @@ def plotVeloHeadingDistribution_freeWalk(flyIDs, vTransTH, vTransAll, vRotAll, o
     [flyIDsShort.append(flyIDs[fly][-3:]) for fly in range(numFlies)]
 
     selectMove = vTransAll > vTransTH
-    selectDist = np.logical_and(objDistAll>minDist,objDistAll<maxDist)
-    select = np.logical_and(selectMove,selectDist)
+    selectDist = np.logical_and(objDistAll > minDist, objDistAll < maxDist)
+    select = np.logical_and(selectMove, selectDist)
 
     for flyInd, flyID in enumerate(flyIDs):
-        selectFly = np.logical_and(select,flyIDAll == flyIDs[flyInd])
+        selectFly = np.logical_and(select, flyIDAll == flyIDs[flyInd])
         tV = vTransAll[selectFly]
         rV = vRotAll[selectFly]
         # v trans
