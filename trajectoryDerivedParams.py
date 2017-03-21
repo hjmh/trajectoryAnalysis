@@ -146,61 +146,60 @@ def computeCurvature(xPos, yPos, time, sigmaVal):
     return curvature
 
 
-def fitGMMtoSingleTrial(perFlyvT,plotDistr):
-    # Based on code from Jake VanderPlas
-    from sklearn.mixture import GMM
+def countVisits(dist2Obj, visitRad):
+    """ Function related to landmark visit analysis, operates on trajectory in polar coordinates. """
 
-    # Set up the dataset.
-    X = perFlyvT[perFlyvT < 30.0]
+    inside = (dist2Obj < visitRad).astype('int')
+    time = np.linspace(0, 600, len(dist2Obj))
 
-    # Learn the best-fit GMM models
-    # Here we'll use GMM in the standard way: the fit() method uses an Expectation-Maximization approach to find the
-    # best mixture of Gaussians for the data
+    entries = np.zeros(len(inside))
+    entries[1:] = np.diff(inside) == 1
 
-    # fit models with 1-3 components
-    N = np.arange(1, 4)
-    models = [None for i in range(len(N))]
+    exits = np.zeros(len(inside))
+    exits[1:] = np.diff(inside) == -1
 
-    for i in range(len(N)):
-        models[i] = GMM(N[i]).fit(X)
+    entryTime = time[entries.astype('bool')]
+    exitTime = time[exits.astype('bool')]
+    if len(entryTime) != len(exitTime):
+        visitT = exitTime[0:min(sum(exits), sum(entries))] - entryTime[0:min(sum(exits), sum(entries))]
+    else:
+        visitT = exitTime - entryTime
 
-    # compute the AIC and the BIC
-    AIC = [m.aic(X) for m in models]
+    return entries.astype('bool'), exits.astype('bool'), visitT, entryTime, exitTime
 
-    # Plot the results: data + best-fit mixture
 
-    M_best = models[np.argmin(AIC)]
+def countVisits_df(visitRad, flyID, trial, allFlies_df, keyind_xPos, keyind_yPos):
+    """ Function related to landmark visit analysis, operates on pandas data frame 'allFlies_df'. """
 
-    x = np.linspace(-1, 30, 1000)
-    logprob, responsibilities = M_best.eval(x)
-    pdf = np.exp(logprob)
-    pdf_individual = responsibilities * pdf[:, np.newaxis]
+    querystring = '(trial==' + str(trial) + ') & (flyID == "'+flyID+'")'
+    xPosTrial = np.asarray(allFlies_df.query(querystring).iloc[:, keyind_xPos:keyind_xPos+1]).squeeze()
+    yPosTrial = np.asarray(allFlies_df.query(querystring).iloc[:, keyind_yPos:keyind_yPos+1]).squeeze()
+    objDistTrial, thetaTrial = cartesian2polar(xPosTrial, yPosTrial)
 
-    # find intersection points
-    crosspts = np.zeros(3)
-    for model in range(3):
-        try:
-            crossovers = np.pad(np.diff(np.array(pdf_individual[:, model] > pdf_individual[:, (model+1) % 3]).astype(int)),
-                                (1, 0), 'constant', constant_values=(0,))
-            crosspts[model] = np.where(crossovers != 0)[0][0]
-        except IndexError:
-            crosspts[model] = 0
+    entries, exits, visitT, entryTime, exitTime = countVisits(objDistTrial, visitRad)
 
-    walkingboutTH = max(2, x[max(crosspts)])
+    return entries, exits, visitT, entryTime, exitTime
 
-    if(plotDistr):
-        fig = plt.figure(figsize=(10, 4))
-        fig.subplots_adjust(left=0.12, right=0.97, bottom=0.21, top=0.9, wspace=0.5)
-        ax = fig.add_subplot(111)
-        ax.hist(X, 30, normed=True, histtype='stepfilled', alpha=0.4)
-        ax.plot(x, pdf, '-k', alpha=0.7)
-        ax.plot(x, pdf_individual, '--r', alpha=0.5)
-        ax.plot(walkingboutTH, pdf_individual[max(crosspts), model], 'bo')
-        ax.plot(x[crosspts[model]], pdf_individual[crosspts[model], model], 'ro')
-        ax.set_xlabel('$x$')
-        ax.set_ylabel('$p(x)$')
-        ax.set_xlim(-1, 30)
-        ax.set_ylim(0, 0.25)
-        myAxisTheme(ax)
 
-    return walkingboutTH
+def visitTime_df(visitRad, flyID, trial, allFlies_df, keyind_xPos, keyind_yPos):
+    """ Function related to landmark visit analysis, operates on pandas data frame 'allFlies_df'. """
+
+    querystring = '(trial==' + str(trial) + ') & (flyID == "'+flyID+'")'
+    xPosTrial = np.asarray(allFlies_df.query(querystring).iloc[:, keyind_xPos:keyind_xPos+1]).squeeze()
+    yPosTrial = np.asarray(allFlies_df.query(querystring).iloc[:, keyind_yPos:keyind_yPos+1]).squeeze()
+
+    objDistTrial, thetaTrial = cartesian2polar(xPosTrial, yPosTrial)
+
+    inside = (objDistTrial < visitRad).astype('int')
+    time = np.linspace(0, 600, len(xPosTrial))
+
+    entries = np.zeros(len(inside))
+    entries[1:] = np.diff(inside) == 1
+
+    exits = np.zeros(len(inside))
+    exits[1:] = np.diff(inside) == -1
+
+    entryTime = time[entries.astype('bool')]
+    exitTime = time[exits.astype('bool')]
+
+    return entries, exits, time, entryTime, exitTime
