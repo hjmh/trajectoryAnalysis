@@ -12,8 +12,6 @@ def convertRawHeadingAngle(angleRaw):
     """ Convert heading angle (FlyOver) to rad """
     angle = np.zeros(len(angleRaw))
     angle[:] = np.pi/180*angleRaw
-    # angle[np.pi/180*FOData[:,5]>np.pi] = angle[np.pi/180*FOData[:,5] > np.pi] - np.pi
-    # angle[np.pi/180*FOData[:,5]<np.pi] = angle[np.pi/180*FOData[:,5] < np.pi] + np.pi
 
     return angle
 
@@ -43,39 +41,7 @@ def velocityFromTrajectory(time, angle, xPos, yPos, N, numFrames):
 def cartesian2polar(xPosFly,yPosFly):
     raddist = np.hypot(xPosFly, yPosFly)
     theta = np.arctan2(yPosFly, xPosFly) + np.pi
-
     return raddist, theta
-
-
-def polarCurvature(theta, objdist):
-
-    from scipy.ndimage.filters import gaussian_filter
-
-    # unwrap theta before taking derivatives
-    # thetaU = np.copy(theta)
-    # thetaU[~np.isnan(theta)] = np.unwrap(theta[~np.isnan(theta)],discont=np.pi)
-
-    # first derivatives of the distance and angle
-    d_theta = np.hstack((0, np.diff(theta)))
-    d_theta[d_theta > np.pi] -= 2*np.pi
-    d_theta[d_theta <= -np.pi] += 2*np.pi
-    d_theta[np.where(np.isnan(d_theta))[0]] = 0
-
-    # filter derivatives
-    sigma = 2
-    d_theta_filt = gaussian_filter(d_theta, sigma, mode='reflect')
-
-    d_objdist = np.hstack((0, np.diff(objdist)))/d_theta_filt
-
-    d_objdist_filt = gaussian_filter(d_objdist, sigma, mode='reflect')
-
-    # second derivative
-    dd_objdist = np.hstack((0, np.diff(d_objdist_filt)))/d_theta_filt
-
-    # compute curvature
-    polarCurv = (objdist**2 + 2*(d_objdist**2) - objdist*dd_objdist)/(np.sqrt(objdist**2 + d_objdist**2)**3)
-
-    return polarCurv, d_theta, d_objdist
 
 
 def dotproduct2d(a, b):
@@ -93,7 +59,7 @@ def relationToObject(time, xPos, yPos, angle, objLocation):
     # Vector to object location
     objDirection = np.vstack((objLocation[0]-xPos, objLocation[1]-yPos))
 
-    objDistance = veclength2d(objDirection)
+    objDistance = np.hypot(objLocation[0]-xPos, objLocation[1]-yPos)
 
     # Fly orientation vector
     flyDirection = np.vstack((np.cos(angle), np.sin(angle)))
@@ -112,38 +78,6 @@ def relationToObject(time, xPos, yPos, angle, objLocation):
 
     return objDirection, objDistance, gammaFull, gamma, gammaV
 
-
-def computeCurvature(xPos, yPos, time, sigmaVal):
-    from scipy.ndimage.filters import gaussian_filter
-
-    nPts = len(xPos)
-
-    # Compute first and second derivatives of x and y w.r.t. to t
-    dxdt = np.zeros(nPts)
-    dydt = np.zeros(nPts)
-
-    # Smooth position and partial derivatives with gaussian kernel before taking numerical derivative
-    sigma = sigmaVal
-    x_filt = gaussian_filter(xPos, sigma, mode='reflect')
-    y_filt = gaussian_filter(yPos, sigma, mode='reflect')
-
-    dxdt[1:] = np.diff(x_filt)/np.diff(time)
-    dydt[1:] = np.diff(y_filt)/np.diff(time)
-
-    ddxdt = np.zeros(nPts)
-    ddydt = np.zeros(nPts)
-
-    sigma = sigmaVal
-    dxdt_filt = gaussian_filter(dxdt, sigma, mode='reflect')
-    dydt_filt = gaussian_filter(dydt, sigma, mode='reflect')
-
-    ddxdt[1:] = np.diff(dxdt_filt)/np.diff(time)
-    ddydt[1:] = np.diff(dydt_filt)/np.diff(time)
-
-    # Compute and return curvature
-    curvature = (dxdt*ddydt - dydt*ddxdt) / (dxdt*dxdt + dydt*dydt)**(3.0/2.0)
-
-    return curvature
 
 
 def countVisits(dist2Obj, visitRad):
